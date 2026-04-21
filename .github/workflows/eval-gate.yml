@@ -17,50 +17,14 @@ on:
 
 jobs:
   # ─────────────────────────────────────────────────
-  # Job 1: Run evaluation and compute metrics
+  # Job 1: delegate to reusable eval workflow
   # ─────────────────────────────────────────────────
   eval:
-    name: Run model evaluation
-    runs-on: ubuntu-latest
-    outputs:
-      accuracy: ${{ steps.metrics.outputs.accuracy }}
-      passed: ${{ steps.metrics.outputs.passed }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Simulate eval run
-        id: metrics
-        run: |
-          # In real life: run your eval script here
-          # python eval.py --output metrics.json
-
-          if [[ "${{ inputs.simulate_metric_fail }}" == "true" ]]; then
-            ACCURACY=72
-          else
-            ACCURACY=91
-          fi
-
-          THRESHOLD=${{ inputs.accuracy_threshold || '85' }}
-
-          echo "Accuracy: $ACCURACY%"
-          echo "Threshold: $THRESHOLD%"
-
-          if (( ACCURACY >= THRESHOLD )); then
-            echo "passed=true" >> $GITHUB_OUTPUT
-            echo "✅ Eval PASSED"
-          else
-            echo "passed=false" >> $GITHUB_OUTPUT
-            echo "❌ Eval FAILED — will require manual approval"
-          fi
-
-          echo "accuracy=$ACCURACY" >> $GITHUB_OUTPUT
-
-      - name: Summarize
-        run: |
-          echo "### Eval Results 📊" >> $GITHUB_STEP_SUMMARY
-          echo "- Accuracy: **${{ steps.metrics.outputs.accuracy }}%**" >> $GITHUB_STEP_SUMMARY
-          echo "- Passed: **${{ steps.metrics.outputs.passed }}**" >> $GITHUB_STEP_SUMMARY
+    uses: ./.github/workflows/eval.yml
+    with:
+      # push trigger has no inputs — default to simulate_metric_fail=true
+      simulate_metric_fail: ${{ inputs.simulate_metric_fail || true }}
+      accuracy_threshold: ${{ inputs.accuracy_threshold || '85' }}
 
   # ─────────────────────────────────────────────────
   # Job 2: Auto-pass path — skip approval

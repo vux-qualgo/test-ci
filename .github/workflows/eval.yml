@@ -1,0 +1,61 @@
+name: Run Eval
+
+on:
+  workflow_call:
+    inputs:
+      simulate_metric_fail:
+        description: 'Simulate a metric failure?'
+        type: boolean
+        default: true
+      accuracy_threshold:
+        description: 'Minimum accuracy (0-100)'
+        type: string
+        default: '85'
+    outputs:
+      accuracy:
+        description: 'Achieved accuracy percentage'
+        value: ${{ jobs.eval.outputs.accuracy }}
+      passed:
+        description: 'Whether eval met the threshold'
+        value: ${{ jobs.eval.outputs.passed }}
+
+jobs:
+  eval:
+    name: Run model evaluation
+    runs-on: ubuntu-latest
+    outputs:
+      accuracy: ${{ steps.metrics.outputs.accuracy }}
+      passed: ${{ steps.metrics.outputs.passed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Simulate eval run
+        id: metrics
+        run: |
+          if [[ "${{ inputs.simulate_metric_fail }}" == "true" ]]; then
+            ACCURACY=72
+          else
+            ACCURACY=91
+          fi
+
+          THRESHOLD=${{ inputs.accuracy_threshold || '85' }}
+
+          echo "Accuracy: $ACCURACY%"
+          echo "Threshold: $THRESHOLD%"
+
+          if (( ACCURACY >= THRESHOLD )); then
+            echo "passed=true" >> $GITHUB_OUTPUT
+            echo "✅ Eval PASSED"
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "❌ Eval FAILED — will require manual approval"
+          fi
+
+          echo "accuracy=$ACCURACY" >> $GITHUB_OUTPUT
+
+      - name: Summarize
+        run: |
+          echo "### Eval Results 📊" >> $GITHUB_STEP_SUMMARY
+          echo "- Accuracy: **${{ steps.metrics.outputs.accuracy }}%**" >> $GITHUB_STEP_SUMMARY
+          echo "- Passed: **${{ steps.metrics.outputs.passed }}**" >> $GITHUB_STEP_SUMMARY
