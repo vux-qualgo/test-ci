@@ -1,0 +1,102 @@
+name: Eval Gate + Manual Approval Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      simulate_metric_fail:
+        description: 'Simulate a metric failure to trigger approval gate?'
+        type: boolean
+        default: true
+      accuracy_threshold:
+        description: 'Minimum accuracy (0-100)'
+        type: string
+        default: '85'
+  push:
+    branches:
+      - 'release/v*.*.*'
+
+jobs:
+  # ─────────────────────────────────────────────────
+  # Job 1: Run evaluation and compute metrics
+  # ─────────────────────────────────────────────────
+  eval:
+    name: Run model evaluation
+    runs-on: ubuntu-latest
+    outputs:
+      accuracy: ${{ steps.metrics.outputs.accuracy }}
+      passed: ${{ steps.metrics.outputs.passed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Simulate eval run
+        id: metrics
+        run: |
+          # In real life: run your eval script here
+          # python eval.py --output metrics.json
+
+          if [[ "${{ inputs.simulate_metric_fail }}" == "true" ]]; then
+            ACCURACY=72
+          else
+            ACCURACY=91
+          fi
+
+          THRESHOLD=${{ inputs.accuracy_threshold || '85' }}
+
+          echo "Accuracy: $ACCURACY%"
+          echo "Threshold: $THRESHOLD%"
+
+          if (( ACCURACY >= THRESHOLD )); then
+            echo "passed=true" >> $GITHUB_OUTPUT
+            echo "✅ Eval PASSED"
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "❌ Eval FAILED — will require manual approval"
+          fi
+
+          echo "accuracy=$ACCURACY" >> $GITHUB_OUTPUT
+
+      - name: Summarize
+        run: |
+          echo "### Eval Results 📊" >> $GITHUB_STEP_SUMMARY
+          echo "- Accuracy: **${{ steps.metrics.outputs.accuracy }}%**" >> $GITHUB_STEP_SUMMARY
+          echo "- Passed: **${{ steps.metrics.outputs.passed }}**" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────
+  # Job 2: Auto-pass path — skip approval
+  # ─────────────────────────────────────────────────
+  build-and-push-auto:
+    name: Build & push (auto-approved)
+    needs: eval
+    if: needs.eval.outputs.passed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build image
+        run: |
+          echo "🟢 Eval passed — proceeding without manual approval"
+          echo "docker build + push would run here"
+          sleep 3
+          echo "✅ Done"
+
+  # ─────────────────────────────────────────────────
+  # Job 3: Gated path — requires manual approval
+  # ─────────────────────────────────────────────────
+  build-and-push-gated:
+    name: Build & push (gated by approval)
+    needs: eval
+    if: needs.eval.outputs.passed == 'false'
+    runs-on: ubuntu-latest
+    environment: prod-deploy   # 👈 THIS triggers the approval gate
+    steps:
+      - name: Show approval context
+        run: |
+          echo "🟡 Eval failed (accuracy=${{ needs.eval.outputs.accuracy }}%)"
+          echo "🔐 This step only runs after manual approval"
+          echo "Approver: ${{ github.actor }}"
+          echo "Approved at: $(date -u +%FT%TZ)"
+
+      - name: Build image (after bypass)
+        run: |
+          echo "🚀 Proceeding with deploy despite failed eval"
+          sleep 3
+          echo "✅ Done"
